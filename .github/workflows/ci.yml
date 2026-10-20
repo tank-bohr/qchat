@@ -16,6 +16,7 @@ concurrency:
 env:
   VCPKG_COMMIT: 469a0504e4a6ebf6173d1c0f51a7fa34c382fd43
   CMAKE_BUILD_PARALLEL_LEVEL: 3
+  VCPKG_MAX_CONCURRENCY: 3
 
 jobs:
   lint:
@@ -27,7 +28,7 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25"
           cache: false
       - name: Install linters
         run: |
@@ -62,6 +63,7 @@ jobs:
     env:
       VCPKG_ROOT: ${{ github.workspace }}/.cache/vcpkg
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg-binaries
+      VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}/cmake/triplets
       MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
       - uses: actions/checkout@v4
@@ -71,6 +73,14 @@ jobs:
       - name: Enable MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+      - name: Select isolated dependency checkout
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            # Qt's generated MOC filenames exceed MAX_PATH under the workspace.
+            echo "VCPKG_ROOT=${GITHUB_WORKSPACE:0:2}/vcpkg" >> "$GITHUB_ENV"
+          else
+            echo "VCPKG_ROOT=$GITHUB_WORKSPACE/.cache/vcpkg" >> "$GITHUB_ENV"
+          fi
       - name: Install Linux prerequisites
         if: runner.os == 'Linux'
         run: |
@@ -80,20 +90,22 @@ jobs:
             libxext-dev libxfixes-dev libxi-dev libxrender-dev libxcb1-dev \
             libxcb-cursor-dev libxcb-keysyms1-dev libxcb-render-util0-dev libxcb-image0-dev \
             libxcb-icccm4-dev libxcb-randr0-dev libxcb-shape0-dev libxcb-sync-dev \
-            libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-xkb-dev libxkbcommon-dev \
+            libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-xkb-dev libxcb-util-dev \
+            libxcb-xinput-dev libxcb-glx0-dev libxkbcommon-dev \
             libxkbcommon-x11-dev libfontconfig1-dev clang-tidy-18 cppcheck
       - name: Install macOS prerequisites
         if: runner.os == 'macOS'
         run: |
-          brew install ninja autoconf automake libtool bison pkg-config
+          brew install ninja autoconf autoconf-archive automake libtool bison pkg-config
           echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
       - name: Install build tooling
         run: pip install cmake==3.31.6 ninja==1.11.1.4 gcovr==8.3
       - name: Restore compiled dependencies
-        uses: actions/cache@v4
+        id: dependency-cache
+        uses: actions/cache/restore@v4
         with:
           path: .cache/vcpkg-binaries
-          key: vcpkg-${{ matrix.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-${{ matrix.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}
       - name: Bootstrap pinned vcpkg
         run: |
           mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
@@ -106,6 +118,18 @@ jobs:
           else
             "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
           fi
+      - name: Build static dependencies
+        run: |
+          "$VCPKG_ROOT/vcpkg" install --triplet=${{ matrix.triplet }} \
+            --host-triplet=${{ matrix.triplet }} --x-feature=desktop \
+            --x-install-root="$GITHUB_WORKSPACE/vcpkg_installed" \
+            --clean-buildtrees-after-build
+      - name: Save compiled dependencies before application checks
+        if: steps.dependency-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/vcpkg-binaries
+          key: vcpkg-${{ matrix.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}
       - name: Configure static release
         run: |
           cmake --preset release \
@@ -186,10 +210,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: reports-${{ matrix.name }}
+          include-hidden-files: true
           path: |
             build/**/Testing/Temporary/LastTest.log
             build/release/test-results.xml
             build/coverage/coverage.*
+            build/release/vcpkg-manifest-install.log
+            ${{ env.VCPKG_ROOT }}/buildtrees/*/*.log
 
   server:
     name: Static server / ${{ matrix.arch }}

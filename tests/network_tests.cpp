@@ -3,7 +3,7 @@
 #include "test_support.hpp"
 
 #include <array>
-#include <atomic>
+#include <future>
 
 namespace {
 void exchange() {
@@ -37,23 +37,19 @@ void exchange() {
 
 void parallel_clients() {
     ServerFixture server;
-    std::atomic<bool> failed = false;
-    std::vector<std::jthread> clients;
+    std::vector<std::future<void>> clients;
     clients.reserve(8);
     for (int i = 0; i < 8; ++i) {
-        clients.emplace_back([&] {
-            try {
-                qchat::Connection client("127.0.0.1", server.port());
-                for (int j = 0; j < 25; ++j) {
-                    (void)client.post("Guest", "Concurrent message");
-                }
-            } catch (...) {
-                failed = true;
+        clients.push_back(std::async(std::launch::async, [&] {
+            qchat::Connection client("127.0.0.1", server.port());
+            for (int j = 0; j < 25; ++j) {
+                (void)client.post("Guest", "Concurrent message");
             }
-        });
+        }));
     }
-    clients.clear();
-    CHECK(!failed);
+    for (auto &client : clients) {
+        client.get();
+    }
     qchat::Connection reader("127.0.0.1", server.port());
     CHECK(reader.poll("", 0).messages.size() == 100);
     const auto page = reader.poll("test-epoch", 100);

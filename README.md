@@ -68,7 +68,11 @@ cmake --install build/release --prefix out --component client
 Use `x64-windows-static`, `arm64-osx`, or `x64-osx` on other systems and set
 `-DQCHAT_BUILD_SERVER=OFF`. On macOS set `MACOSX_DEPLOYMENT_TARGET=13.0` before
 configuring. Qt and Thrift builds are substantial; CI caches their binaries.
-The first static dependency build can take a long time.
+The release preset uses the overlay triplets in `cmake/triplets` to build static
+dependencies in Release only. Debug, coverage, and sanitizer builds of QChat can
+reuse these libraries on Linux. CI sets `VCPKG_OVERLAY_TRIPLETS` for every build,
+cleans completed dependency build trees, and saves the dependency cache before
+configuring the application. The first static dependency build can take a long time.
 
 For faster development with an installed Qt 6.8+ and Thrift:
 
@@ -110,7 +114,7 @@ Every push to `main`, pull request, and manual workflow runs:
 
 Pushing a `v*` tag publishes release assets only after all required jobs pass.
 Ordinary CI runs upload artifacts without publishing a release.
-No GitHub workflow has run until this repository is pushed to GitHub.
+Build status and downloadable artifacts are available in the repository's Actions tab.
 
 ## Protocol and limits
 
