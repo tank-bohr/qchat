@@ -27,7 +27,7 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25"
           cache: false
       - name: Install linters
         run: |
@@ -82,12 +82,13 @@ jobs:
             libxext-dev libxfixes-dev libxi-dev libxrender-dev libxcb1-dev \
             libxcb-cursor-dev libxcb-keysyms1-dev libxcb-render-util0-dev libxcb-image0-dev \
             libxcb-icccm4-dev libxcb-randr0-dev libxcb-shape0-dev libxcb-sync-dev \
-            libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-xkb-dev libxkbcommon-dev \
+            libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-xkb-dev libxcb-util-dev \
+            libxcb-xinput-dev libxcb-glx0-dev libxkbcommon-dev \
             libxkbcommon-x11-dev libfontconfig1-dev clang-tidy-18 cppcheck
       - name: Install macOS prerequisites
         if: runner.os == 'macOS'
         run: |
-          brew install ninja autoconf automake libtool bison pkg-config
+          brew install ninja autoconf autoconf-archive automake libtool bison pkg-config
           echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
       - name: Install build tooling
         run: pip install cmake==3.31.6 ninja==1.11.1.4 gcovr==8.3
@@ -199,6 +200,8 @@ jobs:
             build/**/Testing/Temporary/LastTest.log
             build/release/test-results.xml
             build/coverage/coverage.*
+            build/release/vcpkg-manifest-install.log
+            .cache/vcpkg/buildtrees/*/*.log
 
   server:
     name: Static server / ${{ matrix.arch }}
