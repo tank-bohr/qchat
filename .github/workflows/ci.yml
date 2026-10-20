@@ -16,6 +16,7 @@ concurrency:
 env:
   VCPKG_COMMIT: 469a0504e4a6ebf6173d1c0f51a7fa34c382fd43
   CMAKE_BUILD_PARALLEL_LEVEL: 3
+  VCPKG_MAX_CONCURRENCY: 3
 
 jobs:
   lint:
@@ -62,6 +63,7 @@ jobs:
     env:
       VCPKG_ROOT: ${{ github.workspace }}/.cache/vcpkg
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg-binaries
+      VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}/cmake/triplets
       MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
       - uses: actions/checkout@v4
@@ -72,7 +74,13 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
       - name: Select isolated dependency checkout
-        run: echo "VCPKG_ROOT=$GITHUB_WORKSPACE/.cache/vcpkg" >> "$GITHUB_ENV"
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            # Qt's generated MOC filenames exceed MAX_PATH under the workspace.
+            echo "VCPKG_ROOT=${GITHUB_WORKSPACE:0:2}/vcpkg" >> "$GITHUB_ENV"
+          else
+            echo "VCPKG_ROOT=$GITHUB_WORKSPACE/.cache/vcpkg" >> "$GITHUB_ENV"
+          fi
       - name: Install Linux prerequisites
         if: runner.os == 'Linux'
         run: |
@@ -97,7 +105,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .cache/vcpkg-binaries
-          key: vcpkg-${{ matrix.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-${{ matrix.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}
       - name: Bootstrap pinned vcpkg
         run: |
           mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
@@ -110,6 +118,18 @@ jobs:
           else
             "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
           fi
+      - name: Build static dependencies
+        run: |
+          "$VCPKG_ROOT/vcpkg" install --triplet=${{ matrix.triplet }} \
+            --host-triplet=${{ matrix.triplet }} --x-feature=desktop \
+            --x-install-root="$GITHUB_WORKSPACE/vcpkg_installed" \
+            --clean-buildtrees-after-build
+      - name: Save compiled dependencies before application checks
+        if: steps.dependency-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/vcpkg-binaries
+          key: vcpkg-${{ matrix.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}
       - name: Configure static release
         run: |
           cmake --preset release \
@@ -117,12 +137,6 @@ jobs:
             -DVCPKG_HOST_TRIPLET=${{ matrix.triplet }} \
             -DVCPKG_INSTALLED_DIR="$GITHUB_WORKSPACE/vcpkg_installed" \
             -DQCHAT_BUILD_SERVER=${{ matrix.server }}
-      - name: Save compiled dependencies before application checks
-        if: steps.dependency-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: .cache/vcpkg-binaries
-          key: vcpkg-${{ matrix.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
       - name: Build and test
         run: |
           cmake --build --preset release
@@ -196,12 +210,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: reports-${{ matrix.name }}
+          include-hidden-files: true
           path: |
             build/**/Testing/Temporary/LastTest.log
             build/release/test-results.xml
             build/coverage/coverage.*
             build/release/vcpkg-manifest-install.log
-            .cache/vcpkg/buildtrees/*/*.log
+            ${{ env.VCPKG_ROOT }}/buildtrees/*/*.log
 
   server:
     name: Static server / ${{ matrix.arch }}
