@@ -1,0 +1,251 @@
+name: Build, test, analyze, package
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_COMMIT: 469a0504e4a6ebf6173d1c0f51a7fa34c382fd43
+  CMAKE_BUILD_PARALLEL_LEVEL: 3
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: false
+      - name: Install linters
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-18 shellcheck
+          pip install ruff==0.11.13
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Check authored sources and workflows
+        run: |
+          find src include tests -type f \( -name '*.cpp' -o -name '*.hpp' \) -print0 \
+            | xargs -0 clang-format-18 --dry-run --Werror
+          shellcheck tools/*.sh
+          ruff check tools tests
+          ruff format --check tools tests
+          "$(go env GOPATH)/bin/actionlint"
+
+  desktop:
+    name: Desktop / ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: linux-x86_64, os: ubuntu-24.04, triplet: x64-linux, server: "ON"}
+          - {name: windows-x86_64, os: windows-2022, triplet: x64-windows-static, server: "OFF"}
+          - {name: macos-arm64, os: macos-15, triplet: arm64-osx, server: "OFF"}
+          - {name: macos-x86_64, os: macos-15-intel, triplet: x64-osx, server: "OFF"}
+    defaults:
+      run:
+        shell: bash
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.cache/vcpkg
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg-binaries
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Enable MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Install Linux prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build autoconf automake autoconf-archive libtool \
+            flex bison pkg-config libgl1-mesa-dev libglu1-mesa-dev libx11-dev libx11-xcb-dev \
+            libxext-dev libxfixes-dev libxi-dev libxrender-dev libxcb1-dev \
+            libxcb-cursor-dev libxcb-keysyms1-dev libxcb-render-util0-dev libxcb-image0-dev \
+            libxcb-icccm4-dev libxcb-randr0-dev libxcb-shape0-dev libxcb-sync-dev \
+            libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-xkb-dev libxkbcommon-dev \
+            libxkbcommon-x11-dev libfontconfig1-dev clang-tidy-18 cppcheck
+      - name: Install macOS prerequisites
+        if: runner.os == 'macOS'
+        run: |
+          brew install ninja autoconf automake libtool bison pkg-config
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+      - name: Install build tooling
+        run: pip install cmake==3.31.6 ninja==1.11.1.4 gcovr==8.3
+      - name: Restore compiled dependencies
+        uses: actions/cache@v4
+        with:
+          path: .cache/vcpkg-binaries
+          key: vcpkg-${{ matrix.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+      - name: Bootstrap pinned vcpkg
+        run: |
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+          git init "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" remote add origin https://github.com/microsoft/vcpkg.git
+          git -C "$VCPKG_ROOT" fetch --depth 1 origin "$VCPKG_COMMIT"
+          git -C "$VCPKG_ROOT" checkout --detach FETCH_HEAD
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            "$VCPKG_ROOT/bootstrap-vcpkg.bat" -disableMetrics
+          else
+            "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+          fi
+      - name: Configure static release
+        run: |
+          cmake --preset release \
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
+            -DVCPKG_HOST_TRIPLET=${{ matrix.triplet }} \
+            -DVCPKG_INSTALLED_DIR="$GITHUB_WORKSPACE/vcpkg_installed" \
+            -DQCHAT_BUILD_SERVER=${{ matrix.server }}
+      - name: Build and test
+        run: |
+          cmake --build --preset release
+          ctest --preset release --output-junit test-results.xml
+          cmake --build build/release --target all_qmllint
+      - name: Analyze C++
+        if: runner.os == 'Linux'
+        run: python tools/analyze.py build/release --clang-tidy clang-tidy-18
+      - name: Coverage
+        if: runner.os == 'Linux'
+        run: |
+          cmake -S . -B build/coverage -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DVCPKG_MANIFEST_FEATURES=desktop \
+            -DVCPKG_INSTALLED_DIR="$GITHUB_WORKSPACE/vcpkg_installed" \
+            -DCMAKE_BUILD_TYPE=Debug -DQCHAT_COVERAGE=ON
+          cmake --build build/coverage
+          ctest --test-dir build/coverage --output-on-failure
+          gcovr --root . --filter 'src/core/' --filter 'src/network/' --filter 'src/client/.*\.cpp' \
+            --exclude 'src/client/main.cpp' --exclude-unreachable-branches \
+            --fail-under-line 85 --xml build/coverage/coverage.xml --xml-pretty \
+            --html-details build/coverage/coverage.html build/coverage
+      - name: Address and undefined behavior sanitizers
+        if: runner.os == 'Linux'
+        run: |
+          cmake -S . -B build/asan -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DVCPKG_MANIFEST_FEATURES=desktop \
+            -DVCPKG_INSTALLED_DIR="$GITHUB_WORKSPACE/vcpkg_installed" \
+            -DQCHAT_BUILD_CLIENT=OFF -DCMAKE_BUILD_TYPE=Debug \
+            -DQCHAT_SANITIZER=address,undefined
+          cmake --build build/asan
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+            ctest --test-dir build/asan --output-on-failure
+      - name: Thread sanitizer
+        if: runner.os == 'Linux'
+        run: |
+          cmake -S . -B build/tsan -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DVCPKG_MANIFEST_FEATURES=desktop \
+            -DVCPKG_INSTALLED_DIR="$GITHUB_WORKSPACE/vcpkg_installed" \
+            -DQCHAT_BUILD_CLIENT=OFF -DQCHAT_BUILD_SERVER=OFF \
+            -DCMAKE_BUILD_TYPE=Debug -DQCHAT_SANITIZER=thread
+          cmake --build build/tsan
+          TSAN_OPTIONS=halt_on_error=1 ctest --test-dir build/tsan --output-on-failure
+      - name: Install and audit
+        run: |
+          cmake --install build/release --prefix out --component client
+          case "$RUNNER_OS" in
+            Windows) binary=out/bin/qchat-client.exe ;;
+            macOS) binary=out/qchat-client.app/Contents/MacOS/qchat-client ;;
+            *) binary=out/bin/qchat-client ;;
+          esac
+          python tools/audit_binary.py "$binary"
+          QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software "$binary" --smoke-test
+          python tools/package.py out qchat-client-${{ matrix.name }} --client \
+            --licenses "vcpkg_installed/${{ matrix.triplet }}/share"
+      - name: Include corresponding Qt source and build recipes
+        if: runner.os == 'Linux'
+        run: |
+          python tools/collect_qt_sources.py vcpkg_installed/x64-linux/share "$VCPKG_ROOT" \
+            dist/qchat-qt-sources.tar.gz
+          git archive --format=tar.gz --prefix=qchat/ HEAD > dist/qchat-source.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qchat-client-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-${{ matrix.name }}
+          path: |
+            build/**/Testing/Temporary/LastTest.log
+            build/release/test-results.xml
+            build/coverage/coverage.*
+
+  server:
+    name: Static server / ${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: x86_64, os: ubuntu-24.04}
+          - {arch: aarch64, os: ubuntu-24.04-arm}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test against musl
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work alpine:3.22 sh -ec '
+            apk add --no-cache bash build-base cmake ninja boost-dev flex bison \
+              linux-headers curl python3
+            bash tools/build-thrift.sh /opt/thrift /tmp/thrift
+            cmake -S . -B build/musl -G Ninja -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_PREFIX_PATH=/opt/thrift -DTHRIFT_COMPILER=/opt/thrift/bin/thrift \
+              -DQCHAT_BUILD_CLIENT=OFF -DQCHAT_FULLY_STATIC_SERVER=ON
+            cmake --build build/musl --parallel 3
+            ctest --test-dir build/musl --output-on-failure
+            cmake --install build/musl --prefix out --component server
+            python3 tools/audit_binary.py out/bin/qchat-server --fully-static
+            python3 tools/package.py out qchat-server-linux-${{ matrix.arch }} \
+              --licenses /opt/thrift/share
+          '
+      - name: Smoke test on glibc host
+        run: |
+          out/bin/qchat-server --help
+          python3 tests/server_process_test.py out/bin/qchat-server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qchat-server-linux-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [lint, desktop, server]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: qchat-*
+          path: dist
+          merge-multiple: true
+      - name: Attach source and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          git archive --format=tar.gz --prefix=qchat/ HEAD > dist/qchat-source.tar.gz
+          gh release create "$RELEASE_TAG" dist/* --verify-tag --generate-notes
