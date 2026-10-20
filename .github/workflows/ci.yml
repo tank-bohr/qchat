@@ -22,7 +22,7 @@ jobs:
   lint:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -66,7 +66,7 @@ jobs:
       VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}/cmake/triplets
       MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -102,7 +102,7 @@ jobs:
         run: pip install cmake==3.31.6 ninja==1.11.1.4 gcovr==8.3
       - name: Restore compiled dependencies
         id: dependency-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .cache/vcpkg-binaries
           key: vcpkg-${{ matrix.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}
@@ -126,7 +126,7 @@ jobs:
             --clean-buildtrees-after-build
       - name: Save compiled dependencies before application checks
         if: steps.dependency-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .cache/vcpkg-binaries
           key: vcpkg-${{ matrix.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}
@@ -200,7 +200,7 @@ jobs:
           python tools/collect_qt_sources.py vcpkg_installed/x64-linux/share "$VCPKG_ROOT" \
             dist/qchat-qt-sources.tar.gz
           git archive --format=tar.gz --prefix=qchat/ HEAD > dist/qchat-source.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: qchat-client-${{ matrix.name }}
           path: dist/*
@@ -219,7 +219,7 @@ jobs:
           PY
       - name: Upload test and coverage reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-${{ matrix.name }}
           include-hidden-files: true
@@ -241,7 +241,7 @@ jobs:
           - {arch: x86_64, os: ubuntu-24.04}
           - {arch: aarch64, os: ubuntu-24.04-arm}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build and test against musl
         run: |
           docker run --rm -v "$PWD:/work" -w /work alpine:3.22 sh -ec '
@@ -262,7 +262,7 @@ jobs:
         run: |
           out/bin/qchat-server --help
           python3 tests/server_process_test.py out/bin/qchat-server
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: qchat-server-linux-${{ matrix.arch }}
           path: dist/*
@@ -275,7 +275,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           pattern: qchat-*
