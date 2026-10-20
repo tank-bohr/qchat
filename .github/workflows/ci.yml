@@ -116,6 +116,7 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
             -DVCPKG_HOST_TRIPLET=${{ matrix.triplet }} \
             -DVCPKG_INSTALLED_DIR="$GITHUB_WORKSPACE/vcpkg_installed" \
+            -DVCPKG_INSTALL_OPTIONS=--clean-buildtrees-after-build \
             -DQCHAT_BUILD_SERVER=${{ matrix.server }}
       - name: Save compiled dependencies before application checks
         if: steps.dependency-cache.outputs.cache-hit != 'true'
