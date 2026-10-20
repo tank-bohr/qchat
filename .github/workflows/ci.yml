@@ -71,6 +71,8 @@ jobs:
       - name: Enable MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+      - name: Select isolated dependency checkout
+        run: echo "VCPKG_ROOT=$GITHUB_WORKSPACE/.cache/vcpkg" >> "$GITHUB_ENV"
       - name: Install Linux prerequisites
         if: runner.os == 'Linux'
         run: |
@@ -90,7 +92,8 @@ jobs:
       - name: Install build tooling
         run: pip install cmake==3.31.6 ninja==1.11.1.4 gcovr==8.3
       - name: Restore compiled dependencies
-        uses: actions/cache@v4
+        id: dependency-cache
+        uses: actions/cache/restore@v4
         with:
           path: .cache/vcpkg-binaries
           key: vcpkg-${{ matrix.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
@@ -113,6 +116,12 @@ jobs:
             -DVCPKG_HOST_TRIPLET=${{ matrix.triplet }} \
             -DVCPKG_INSTALLED_DIR="$GITHUB_WORKSPACE/vcpkg_installed" \
             -DQCHAT_BUILD_SERVER=${{ matrix.server }}
+      - name: Save compiled dependencies before application checks
+        if: steps.dependency-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/vcpkg-binaries
+          key: vcpkg-${{ matrix.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
       - name: Build and test
         run: |
           cmake --build --preset release

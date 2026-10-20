@@ -110,7 +110,7 @@ Every push to `main`, pull request, and manual workflow runs:
 
 Pushing a `v*` tag publishes release assets only after all required jobs pass.
 Ordinary CI runs upload artifacts without publishing a release.
-No GitHub workflow has run until this repository is pushed to GitHub.
+Build status and downloadable artifacts are available in the repository's Actions tab.
 
 ## Protocol and limits
 
