@@ -205,6 +205,18 @@ jobs:
           name: qchat-client-${{ matrix.name }}
           path: dist/*
           if-no-files-found: error
+      - name: Collect dependency build logs
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import shutil
+          for log in pathlib.Path(os.environ["VCPKG_ROOT"]).glob("buildtrees/*/*.log"):
+              destination = pathlib.Path("build/dependency-logs") / log.parent.name / log.name
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(log, destination)
+          PY
       - name: Upload test and coverage reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -216,7 +228,7 @@ jobs:
             build/release/test-results.xml
             build/coverage/coverage.*
             build/release/vcpkg-manifest-install.log
-            ${{ env.VCPKG_ROOT }}/buildtrees/*/*.log
+            build/dependency-logs/
 
   server:
     name: Static server / ${{ matrix.arch }}
