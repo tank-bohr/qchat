@@ -96,7 +96,7 @@ jobs:
         run: pip install cmake==3.31.6 ninja==1.11.1.4 gcovr==8.3
       - name: Restore compiled dependencies
         id: dependency-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .cache/vcpkg-binaries
           key: vcpkg-${{ matrix.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}
@@ -120,7 +120,7 @@ jobs:
             --clean-buildtrees-after-build
       - name: Save compiled dependencies before application checks
         if: steps.dependency-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .cache/vcpkg-binaries
           key: vcpkg-${{ matrix.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}
