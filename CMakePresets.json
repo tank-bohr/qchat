@@ -23,6 +23,8 @@
         "CMAKE_BUILD_TYPE": "Release",
         "QCHAT_REQUIRE_STATIC": "ON",
         "VCPKG_MANIFEST_FEATURES": "desktop",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets",
+        "VCPKG_INSTALL_OPTIONS": "--clean-buildtrees-after-build",
         "BUILD_TESTING": "ON"
       }
     }
