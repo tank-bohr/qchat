@@ -38,7 +38,7 @@ uncertain delivery.
 | Server | Linux x86_64 / aarch64 | Fully static musl ELF; no interpreter or shared libraries |
 | Client | Linux x86_64 | Ubuntu 24.04 or compatible glibc baseline; X11/XWayland and system graphics libraries |
 | Client | macOS arm64 / x86_64 | macOS 13+; Apple system frameworks |
-| Client | Windows x86_64 | Windows 10/11; Windows system DLLs, static MSVC runtime |
+| Client | Windows x86_64 | Windows 10 (1809+)/11; Windows system DLLs, static MSVC runtime |
 
 Qt, Thrift, and vendored libraries are statically linked. Desktop operating-system
 libraries cannot all be eliminated, particularly on macOS. Linux graphics drivers
