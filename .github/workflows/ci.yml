@@ -196,6 +196,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: reports-${{ matrix.name }}
+          include-hidden-files: true
           path: |
             build/**/Testing/Temporary/LastTest.log
             build/release/test-results.xml

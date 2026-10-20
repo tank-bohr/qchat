@@ -1,8 +1,7 @@
 #include "qchat/store.hpp"
 #include "test_support.hpp"
 
-#include <atomic>
-#include <thread>
+#include <future>
 
 namespace {
 void validation() {
@@ -57,24 +56,20 @@ void pagination() {
 
 void concurrency() {
     qchat::Store store("epoch", 2000);
-    std::atomic<bool> failed = false;
-    std::vector<std::jthread> writers;
+    std::vector<std::future<void>> writers;
     writers.reserve(8);
     for (int thread = 0; thread < 8; ++thread) {
-        writers.emplace_back([&, thread] {
-            try {
-                for (int i = 0; i < 200; ++i) {
-                    (void)store.post(std::to_string(thread), std::to_string(i));
-                    const auto page = store.poll("epoch", 0, 100);
-                    CHECK(!page.messages.empty());
-                }
-            } catch (...) {
-                failed = true;
+        writers.push_back(std::async(std::launch::async, [&, thread] {
+            for (int i = 0; i < 200; ++i) {
+                (void)store.post(std::to_string(thread), std::to_string(i));
+                const auto page = store.poll("epoch", 0, 100);
+                CHECK(!page.messages.empty());
             }
-        });
+        }));
     }
-    writers.clear();
-    CHECK(!failed);
+    for (auto &writer : writers) {
+        writer.get();
+    }
     std::int64_t cursor = 0;
     for (;;) {
         const auto page = store.poll("epoch", cursor, 100);
