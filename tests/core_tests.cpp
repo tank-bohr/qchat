@@ -54,7 +54,7 @@ void pagination() {
     expect_throw<qchat::InvalidRequest>([&] { (void)store.poll(std::string(129, 'x'), 0, 1); });
 }
 
-void concurrency() {
+void parallel_posts() {
     qchat::Store store("epoch", 2000);
     std::vector<std::future<void>> writers;
     writers.reserve(8);
@@ -88,6 +88,6 @@ int main() {
     return run_tests([] {
         validation();
         pagination();
-        concurrency();
+        parallel_posts();
     });
 }
