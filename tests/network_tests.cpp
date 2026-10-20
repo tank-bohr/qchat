@@ -6,6 +6,18 @@
 #include <future>
 
 namespace {
+void listening_before_ready() {
+    // Connect inside the readiness callback so an early notification fails deterministically.
+    ServerFixture server(1000, [](int port) {
+        apache::thrift::transport::TSocket probe("127.0.0.1", port);
+        probe.setConnTimeout(1000);
+        probe.open();
+        probe.close();
+    });
+    qchat::Connection client("127.0.0.1", server.port());
+    CHECK(client.post("Guest", "Ready").id == 1);
+}
+
 void exchange() {
     expect_throw<std::invalid_argument>([] { const qchat::Service service(nullptr); });
     ServerFixture server(3);
@@ -79,6 +91,7 @@ void oversized_frame() {
 
 int main() {
     return run_tests([] {
+        listening_before_ready();
         exchange();
         parallel_clients();
         oversized_frame();

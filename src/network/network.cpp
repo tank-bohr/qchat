@@ -19,6 +19,15 @@ class LimitedFrames final : public transport::TTransportFactory {
     }
 };
 
+class ReadyHandler final : public apache::thrift::server::TServerEventHandler {
+  public:
+    explicit ReadyHandler(std::function<void()> ready) : ready_(std::move(ready)) {}
+    void preServe() override { ready_(); }
+
+  private:
+    std::function<void()> ready_;
+};
+
 std::shared_ptr<protocol::TBinaryProtocol>
 make_protocol(const std::shared_ptr<transport::TTransport> &transport) {
     auto protocol = std::make_shared<protocol::TBinaryProtocol>(transport);
@@ -66,11 +75,11 @@ Server::Server(const std::string &address, int port, std::string server_id,
     socket_->setRecvTimeout(10000);
     socket_->setSendTimeout(rpc_timeout_ms);
     socket_->setInterruptableChildren(true);
-    socket_->setListenCallback([this, ready = std::move(ready)](auto) {
-        if (ready) {
-            ready(socket_->getPort());
-        }
-    });
+    if (ready) {
+        // preServe runs after listen(); the socket's listen callback runs before it.
+        server_.setServerEventHandler(std::make_shared<ReadyHandler>(
+            [socket = socket_, ready = std::move(ready)] { ready(socket->getPort()); }));
+    }
     server_.setConcurrentClientLimit(128);
 }
 

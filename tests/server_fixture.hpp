@@ -7,9 +7,16 @@
 
 class ServerFixture {
   public:
-    explicit ServerFixture(std::size_t capacity = 1000)
+    explicit ServerFixture(std::size_t capacity = 1000, std::function<void(int)> on_ready = {})
         : server_(
-              "127.0.0.1", 0, "test-epoch", [this](int port) { ready_.set_value(port); }, capacity),
+              "127.0.0.1", 0, "test-epoch",
+              [this, on_ready = std::move(on_ready)](int port) {
+                  if (on_ready) {
+                      on_ready(port);
+                  }
+                  ready_.set_value(port);
+              },
+              capacity),
           thread_([this] {
               try {
                   server_.serve();
