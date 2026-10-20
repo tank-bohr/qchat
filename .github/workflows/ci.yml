@@ -194,14 +194,14 @@ jobs:
           python tools/collect_qt_sources.py vcpkg_installed/x64-linux/share "$VCPKG_ROOT" \
             dist/qchat-qt-sources.tar.gz
           git archive --format=tar.gz --prefix=qchat/ HEAD > dist/qchat-source.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: qchat-client-${{ matrix.name }}
           path: dist/*
           if-no-files-found: error
       - name: Upload test and coverage reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-${{ matrix.name }}
           include-hidden-files: true
@@ -244,7 +244,7 @@ jobs:
         run: |
           out/bin/qchat-server --help
           python3 tests/server_process_test.py out/bin/qchat-server
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: qchat-server-linux-${{ matrix.arch }}
           path: dist/*
