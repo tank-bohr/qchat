@@ -74,7 +74,13 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
       - name: Select isolated dependency checkout
-        run: echo "VCPKG_ROOT=$GITHUB_WORKSPACE/.cache/vcpkg" >> "$GITHUB_ENV"
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            # Qt's generated MOC filenames exceed MAX_PATH under the workspace.
+            echo "VCPKG_ROOT=${GITHUB_WORKSPACE:0:2}/vcpkg" >> "$GITHUB_ENV"
+          else
+            echo "VCPKG_ROOT=$GITHUB_WORKSPACE/.cache/vcpkg" >> "$GITHUB_ENV"
+          fi
       - name: Install Linux prerequisites
         if: runner.os == 'Linux'
         run: |
@@ -210,7 +216,7 @@ jobs:
             build/release/test-results.xml
             build/coverage/coverage.*
             build/release/vcpkg-manifest-install.log
-            .cache/vcpkg/buildtrees/*/*.log
+            ${{ env.VCPKG_ROOT }}/buildtrees/*/*.log
 
   server:
     name: Static server / ${{ matrix.arch }}
