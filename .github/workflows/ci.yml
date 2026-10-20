@@ -22,7 +22,7 @@ jobs:
   lint:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -66,7 +66,7 @@ jobs:
       VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}/cmake/triplets
       MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -241,7 +241,7 @@ jobs:
           - {arch: x86_64, os: ubuntu-24.04}
           - {arch: aarch64, os: ubuntu-24.04-arm}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build and test against musl
         run: |
           docker run --rm -v "$PWD:/work" -w /work alpine:3.22 sh -ec '
@@ -275,7 +275,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           pattern: qchat-*
